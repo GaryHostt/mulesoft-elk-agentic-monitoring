@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+    xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
+    xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+    xmlns:http="http://www.mulesoft.org/schema/mule/http"
+    xmlns:mcp="http://www.mulesoft.org/schema/mule/mcp"
+    xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/mcp http://www.mulesoft.org/schema/mule/mcp/current/mule-mcp.xsd
+        http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd">
+
+    <import file="global.xml" />
+    <import file="action-process-api.xml" />
+
+    <apikit:config name="APIKit_Config" api="api.raml" outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus" />
+
+    <validation:config name="Validation_Config" />
+
+    <flow name="main" doc:name="main">
+        <http:listener config-ref="HTTP_Listener_Config" path="/*" doc:name="HTTP Listener" />
+        <apikit:router config-ref="APIKit_Config" doc:name="APIKit Router" />
+        <error-handler>
+            <on-error-propagate type="APIKIT:BAD_REQUEST">
+                <set-payload value="#[payload]" />
+                <set-variable value="400" variableName="httpStatus" />
+            </on-error-propagate>
+        </error-handler>
+    </flow>
+
+    <flow name="get-logs-application-json" doc:name="get:\logs:application/json">
+        <ee:transform doc:name="Build search payload from query params">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    service_id: attributes.queryParams.service_id,
+    time_lookback: attributes.queryParams.time_lookback default "PT15M",
+    use_sliding_window: attributes.queryParams.use_sliding_window
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <flow-ref name="elk-search-logic-flow" doc:name="elk-search-logic-flow" />
+    </flow>
+
+    <flow name="get-health-application-json" doc:name="get:\health:application/json">
+        <ee:transform doc:name="Health response">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{"status": "OK"}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+
+    <flow name="post-mcp-tools-get-service-logs-application-json" doc:name="post:\mcp\tools\get_service_logs:application/json">
+        <flow-ref name="elk-search-logic-flow" doc:name="elk-search-logic-flow" />
+    </flow>
+
+    <flow name="post-mcp-tools-check-anomaly-status-application-json" doc:name="post:\mcp\tools\check_anomaly_status:application/json">
+        <flow-ref name="anomaly-status-flow" doc:name="anomaly-status-flow" />
+    </flow>
+
+    <flow name="post-mcp-tools-create-incident-application-json" doc:name="post:\mcp\tools\create_incident:application/json">
+        <flow-ref name="create-incident-entry" doc:name="create-incident-entry" />
+    </flow>
+
+    <!-- MCP flows temporarily commented out until MCP server config is properly configured
+    <flow name="get_service_logs" doc:name="get_service_logs">
+        <mcp:tool-listener config-ref="MCP_Server_Config" name="get_service_logs" doc:name="MCP Tool get_service_logs">
+            <mcp:description>Fetches up to 100 token-optimized raw logs for a service. Use ISO8601 duration for time_lookback (e.g. PT5M for 5 minutes).</mcp:description>
+            <mcp:parameters-schema><![CDATA[{
+                "$schema": "# SECURITY: Remote schema removed (http://json-schema.org/draft-07/schema#)",
+                "type": "object",
+                "properties": {
+                    "service_id": { "type": "string", "description": "Service identifier" },
+                    "time_lookback": { "type": "string", "description": "ISO8601 duration e.g. PT5M", "default": "PT15M" }
+                },
+                "required": ["service_id"]
+            }]]></mcp:parameters-schema>
+            <mcp:responses>
+                <mcp:text-tool-response-content text="#[write(payload, 'application/json')]" />
+            </mcp:responses>
+            <mcp:on-error-responses>
+                <mcp:text-tool-response-content text="#['Error: ' ++ (error.description default 'Unknown error')]" />
+            </mcp:on-error-responses>
+        </mcp:tool-listener>
+        <flow-ref name="elk-search-logic-flow" doc:name="elk-search-logic-flow" />
+    </flow>
+
+    <flow name="check_anomaly_status" doc:name="check_anomaly_status">
+        <mcp:tool-listener config-ref="MCP_Server_Config" name="check_anomaly_status" doc:name="MCP Tool check_anomaly_status">
+            <mcp:description>Queries Elasticsearch ML jobs for current anomaly scores and health.</mcp:description>
+            <mcp:parameters-schema><![CDATA[{
+                "$schema": "# SECURITY: Remote schema removed (http://json-schema.org/draft-07/schema#)",
+                "type": "object",
+                "properties": {
+                    "job_id": { "type": "string", "description": "Elasticsearch ML job ID" }
+                },
+                "required": ["job_id"]
+            }]]></mcp:parameters-schema>
+            <mcp:responses>
+                <mcp:text-tool-response-content text="#[write(payload, 'application/json')]" />
+            </mcp:responses>
+            <mcp:on-error-responses>
+                <mcp:text-tool-response-content text="#['Error: ' ++ (error.description default 'Unknown error')]" />
+            </mcp:on-error-responses>
+        </mcp:tool-listener>
+        <flow-ref name="anomaly-status-flow" doc:name="anomaly-status-flow" />
+    </flow>
+    -->
+
+    <flow name="elk-search-logic-flow" doc:name="elk-search-logic-flow">
+        <validation:is-not-blank-string value="#[payload.service_id]" message="service_id is required" config-ref="Validation_Config" doc:name="Validate service_id" />
+        <ee:transform doc:name="Query Engine - build ES DSL">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+(readUrl("classpath://dw/queryEngineToES.dwl"))(payload)]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <http:request method="POST" path="#['/' ++ (p('elasticsearch.index') default 'my-index') ++ '/_search']" config-ref="Elasticsearch_Request_Config" doc:name="Elasticsearch search">
+            <http:body><![CDATA[#[payload]]]></http:body>
+        </http:request>
+        <choice doc:name="Token optimizer type">
+            <when expression="#[((payload.use_sliding_window == true or payload.use_sliding_window == 'true') or (p('elasticsearch.useSlidingWindow') == true or p('elasticsearch.useSlidingWindow') == 'true'))]">
+                <ee:transform doc:name="Token Optimizer (sliding window)">
+                    <ee:message>
+                        <ee:set-payload resource="classpath::dw/tokenOptimizerSlidingWindow.dwl" />
+                    </ee:message>
+                </ee:transform>
+            </when>
+            <otherwise>
+                <ee:transform doc:name="Token Optimizer">
+                    <ee:message>
+                        <ee:set-payload resource="classpath::dw/tokenOptimizer.dwl" />
+                    </ee:message>
+                </ee:transform>
+            </otherwise>
+        </choice>
+        <ee:transform doc:name="PII Redaction">
+            <ee:message>
+                <ee:set-payload resource="classpath::dw/piiRedaction.dwl" />
+            </ee:message>
+        </ee:transform>
+        <error-handler>
+            <on-error-continue type="VALIDATION:BLANK_STRING" doc:name="Validation error">
+                <ee:transform doc:name="Error payload">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{"error": "Bad request", "message": (error.description default "Validation failed")}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <set-variable value="400" variableName="httpStatus" doc:name="Set 400" />
+            </on-error-continue>
+            <on-error-continue type="HTTP:CONNECTIVITY,HTTP:TIMEOUT" doc:name="HTTP connectivity/timeout">
+                <ee:transform doc:name="Error payload">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{"error": "Elasticsearch unavailable", "message": (error.description default "Connection or timeout error")}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <set-variable value="502" variableName="httpStatus" doc:name="Set 502" />
+            </on-error-continue>
+            <on-error-continue type="HTTP:BAD_REQUEST,HTTP:NOT_FOUND,HTTP:INTERNAL_SERVER_ERROR" doc:name="HTTP 4xx/5xx">
+                <ee:transform doc:name="Error payload">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{"error": "Elasticsearch error", "message": (error.description default "Request failed")}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <set-variable value="502" variableName="httpStatus" doc:name="Set 502" />
+            </on-error-continue>
+            <on-error-continue type="ANY" doc:name="Any other error">
+                <ee:transform doc:name="Error payload">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{"error": "Internal error", "message": (error.description default "Unexpected error")}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <set-variable value="500" variableName="httpStatus" doc:name="Set 500" />
+            </on-error-continue>
+        </error-handler>
+    </flow>
+
+    <flow name="anomaly-status-flow" doc:name="anomaly-status-flow">
+        <validation:is-not-blank-string value="#[payload.job_id]" message="job_id is required" config-ref="Validation_Config" doc:name="Validate job_id" />
+        <set-variable value="#[payload.job_id]" variableName="job_id" doc:name="Store job_id" />
+        <ee:transform doc:name="Build ML request body">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    "sort": "anomaly_score",
+    "desc": true,
+    "start": "now-1h",
+    "end": "now",
+    "anomaly_score_filter": 75
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <http:request method="POST" path="#['/_ml/anomaly_detectors/' ++ vars.job_id ++ '/_results']" config-ref="Elasticsearch_Request_Config" doc:name="Elasticsearch ML results">
+            <http:body><![CDATA[#[payload]]]></http:body>
+        </http:request>
+        <ee:transform doc:name="Merge job_id for parser">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    job_id: vars.job_id,
+    records: payload.records default []
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <ee:transform doc:name="Anomaly Score Parser">
+            <ee:message>
+                <ee:set-payload resource="classpath::dw/anomalyScoreParser.dwl" />
+            </ee:message>
+        </ee:transform>
+        <error-handler>
+            <on-error-continue type="VALIDATION:BLANK_STRING" doc:name="Validation error">
+                <ee:transform doc:name="Error payload">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{"error": "Bad request", "message": (error.description default "job_id is required")}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <set-variable value="400" variableName="httpStatus" doc:name="Set 400" />
+            </on-error-continue>
+            <on-error-continue type="HTTP:CONNECTIVITY,HTTP:TIMEOUT" doc:name="HTTP connectivity/timeout">
+                <ee:transform doc:name="Error payload">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{"error": "Elasticsearch unavailable", "message": (error.description default "Connection or timeout error")}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <set-variable value="502" variableName="httpStatus" doc:name="Set 502" />
+            </on-error-continue>
+            <on-error-continue type="HTTP:BAD_REQUEST,HTTP:NOT_FOUND,HTTP:UNAUTHORIZED,HTTP:FORBIDDEN,HTTP:INTERNAL_SERVER_ERROR" doc:name="HTTP 4xx/5xx">
+                <ee:transform doc:name="Error payload">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{"error": "Elasticsearch ML error", "message": (error.description default "Request failed")}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <set-variable value="502" variableName="httpStatus" doc:name="Set 502" />
+            </on-error-continue>
+            <on-error-continue type="ANY" doc:name="Any other error">
+                <ee:transform doc:name="Error payload">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{"error": "Internal error", "message": (error.description default "Unexpected error")}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <set-variable value="500" variableName="httpStatus" doc:name="Set 500" />
+            </on-error-continue>
+        </error-handler>
+    </flow>
+</mule>

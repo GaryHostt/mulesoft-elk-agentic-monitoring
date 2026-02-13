@@ -1,0 +1,38 @@
+# ELK System API configuration
+# Override in environment or mule-artifact.properties as needed
+# Elasticsearch below targets local ELK stack (localhost:9200). Change host/port/index if your stack runs elsewhere.
+
+http:
+  host: "0.0.0.0"
+  port: "8081"
+
+elasticsearch:
+  host: "localhost"
+  port: "9200"
+  protocol: "HTTP"
+  baseUrl: "http://localhost:9200"
+  index: "my-index"
+  requestTimeout: 30
+  useSlidingWindow: false
+  pit:
+    keepAlive: "5m"
+
+mcp:
+  endpointPath: "/mcp"
+
+# Phase 2: Jira, PagerDuty, Slack integration
+jira:
+  host: "your-domain.atlassian.net"
+  username: "your-email@company.com"
+  apiToken: "your-jira-api-token"
+
+pagerduty:
+  routingKey: "your-pagerduty-integration-key"
+
+slack:
+  webhookPath: "/services/your/slack/webhook/path"
+
+# Phase 2 Action Process API
+incidents:
+  objectStorePartition: "pending-incidents"
+  idempotencyPartition: "incident-idempotency"

@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+    xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+    xmlns:http="http://www.mulesoft.org/schema/mule/http"
+    xmlns:os="http://www.mulesoft.org/schema/mule/os"
+    xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+        http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd">
+
+    <!-- Phase 2 Action Process API: create_incident, intelligent-incident-router, create-incident-flow -->
+
+    <os:object-store name="Pending_Incidents_Object_Store" doc:name="Pending Incidents Object Store"
+        persistent="true" entryTtl="7" entryTtlUnit="DAYS" maxEntries="5000"
+        expirationInterval="10" expirationIntervalUnit="MINUTES" />
+    <os:object-store name="Incident_Idempotency_Object_Store" doc:name="Incident Idempotency Object Store"
+        persistent="true" entryTtl="24" entryTtlUnit="HOURS" maxEntries="10000"
+        expirationInterval="15" expirationIntervalUnit="MINUTES" />
+
+    <sub-flow name="intelligent-incident-router" doc:name="intelligent-incident-router">
+        <set-variable value="#[uuid()]" variableName="correlationId" doc:name="Set correlationId" />
+        <choice doc:name="Confidence &lt; 0.85?">
+            <when expression="#[payload.confidence_score != null and (payload.confidence_score as Number) &lt; 0.85]">
+                <ee:transform doc:name="Build pending payload for store">
+                    <ee:variables>
+                        <ee:set-variable variableName="pendingPayload"><![CDATA[%dw 2.0
+---
+payload ++ { correlationId: vars.correlationId }]]></ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+                <os:store key="#['pending_incident_' ++ vars.correlationId]" objectStore="Pending_Incidents_Object_Store" doc:name="Store for HITL">
+                    <os:value><![CDATA[#[vars.pendingPayload]]]></os:value>
+                </os:store>
+                <ee:transform doc:name="Build Slack HITL message">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    text: "HITL: Incident pending review. Severity: " ++ (payload.severity default "N/A") ++ ", Summary: " ++ (payload.summary default ""),
+    correlationId: vars.correlationId
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <try doc:name="Try Slack notify">
+                    <http:request method="POST" path="#[p('slack.webhookPath')]" config-ref="Slack_Webhook_Request_Config" doc:name="Notify Slack HITL">
+                        <http:body><![CDATA[#[payload]]]></http:body>
+                        <http:headers><![CDATA[#[output application/java --- { "Content-Type": "application/json" }]]]></http:headers>
+                    </http:request>
+                    <error-handler>
+                        <on-error-continue type="ANY" doc:name="Slack failure - continue" />
+                    </error-handler>
+                </try>
+                <ee:transform doc:name="Return pending_review response">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    status: "pending_review",
+    message: "Queued for human review",
+    correlationId: vars.correlationId
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+            </when>
+            <otherwise>
+                <flow-ref name="create-incident-flow" doc:name="create-incident-flow" />
+            </otherwise>
+        </choice>
+    </sub-flow>
+
+    <sub-flow name="create-incident-flow" doc:name="create-incident-flow">
+        <set-variable value="#[payload]" variableName="incidentPayload" doc:name="Preserve incident for retry" />
+        <set-variable value="#[payload.anomaly_id default 'hash_' ++ (payload.summary default '' as String)]" variableName="idempotencyKey" doc:name="Idempotency key" />
+        <os:contains key="#[vars.idempotencyKey]" objectStore="Incident_Idempotency_Object_Store" doc:name="Check idempotency" target="existingResult" />
+        <choice doc:name="Already processed?">
+            <when expression="#[vars.existingResult == true]">
+                <os:retrieve key="#[vars.idempotencyKey]" objectStore="Incident_Idempotency_Object_Store" doc:name="Retrieve existing result" target="existingPayload" />
+                <set-payload value="#[vars.existingPayload]" doc:name="Return existing" />
+            </when>
+            <otherwise>
+                <try doc:name="Try Jira/PagerDuty with error handling">
+                    <choice doc:name="Severity P1 Critical?">
+                        <when expression="#[payload.severity == 'P1-Critical' or payload.severity == 'P1 Critical']">
+                            <scatter-gather doc:name="Jira and PagerDuty">
+                                <route>
+                                    <flow-ref name="create-jira-issue-flow" doc:name="Jira branch" />
+                                </route>
+                                <route>
+                                    <flow-ref name="create-pagerduty-event-flow" doc:name="PagerDuty branch" />
+                                </route>
+                            </scatter-gather>
+                            <ee:transform doc:name="Combine and store idempotency result">
+                                <ee:message>
+                                    <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    status: "created",
+    severity: payload[0].severity default payload[1].severity default "P1-Critical",
+    jira: payload[0].jira default null,
+    pagerduty: payload[1].pagerduty default null,
+    idempotencyKey: vars.idempotencyKey
+}]]></ee:set-payload>
+                                </ee:message>
+                            </ee:transform>
+                            <os:store key="#[vars.idempotencyKey]" objectStore="Incident_Idempotency_Object_Store" doc:name="Store for idempotency">
+                                <os:value><![CDATA[#[payload]]]></os:value>
+                            </os:store>
+                        </when>
+                        <otherwise>
+                            <flow-ref name="create-jira-issue-flow" doc:name="Jira only" />
+                            <os:store key="#[vars.idempotencyKey]" objectStore="Incident_Idempotency_Object_Store" doc:name="Store for idempotency">
+                                <os:value><![CDATA[#[payload]]]></os:value>
+                            </os:store>
+                        </otherwise>
+                    </choice>
+                    <error-handler>
+                        <on-error-continue type="HTTP:CONNECTIVITY,HTTP:TIMEOUT" doc:name="HTTP connectivity/timeout">
+                            <ee:transform doc:name="Error payload - connector unavailable">
+                                <ee:message>
+                                    <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    error: "Connector unavailable",
+    message: (error.description default "Jira or PagerDuty connection/timeout failed"),
+    idempotencyKey: vars.idempotencyKey,
+    status: "failed_retry_later"
+}]]></ee:set-payload>
+                                </ee:message>
+                            </ee:transform>
+                            <os:store key="#['retry_incident_' ++ vars.idempotencyKey]" objectStore="Pending_Incidents_Object_Store" doc:name="Store for retry">
+                                <os:value><![CDATA[#[vars.incidentPayload]]]></os:value>
+                            </os:store>
+                            <set-variable value="502" variableName="httpStatus" doc:name="Set 502" />
+                        </on-error-continue>
+                        <on-error-continue type="HTTP:BAD_REQUEST,HTTP:UNAUTHORIZED,HTTP:FORBIDDEN,HTTP:NOT_FOUND,HTTP:INTERNAL_SERVER_ERROR" doc:name="HTTP 4xx/5xx">
+                            <ee:transform doc:name="Error payload - connector error">
+                                <ee:message>
+                                    <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    error: "Connector error",
+    message: (error.description default "Jira or PagerDuty request failed"),
+    idempotencyKey: vars.idempotencyKey,
+    status: "failed"
+}]]></ee:set-payload>
+                                </ee:message>
+                            </ee:transform>
+                            <set-variable value="502" variableName="httpStatus" doc:name="Set 502" />
+                        </on-error-continue>
+                        <on-error-continue type="ANY" doc:name="Any other error">
+                            <ee:transform doc:name="Error payload - unexpected">
+                                <ee:message>
+                                    <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    error: "Internal error",
+    message: (error.description default "Unexpected error creating incident"),
+    idempotencyKey: vars.idempotencyKey,
+    status: "failed"
+}]]></ee:set-payload>
+                                </ee:message>
+                            </ee:transform>
+                            <set-variable value="500" variableName="httpStatus" doc:name="Set 500" />
+                        </on-error-continue>
+                    </error-handler>
+                </try>
+            </otherwise>
+        </choice>
+    </sub-flow>
+
+    <sub-flow name="create-jira-issue-flow" doc:name="create-jira-issue-flow">
+        <set-variable value="#[payload.severity default 'P1-Critical']" variableName="incidentSeverity" doc:name="Preserve severity" />
+        <ee:transform doc:name="Build Jira issue body">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    fields: {
+        project: { key: "INC" },
+        summary: payload.summary default "Incident",
+        description: (payload.reasoning default "") ++ "\nAnomaly ID: " ++ (payload.anomaly_id default "N/A"),
+        issuetype: { name: "Incident" }
+    }
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <http:request method="POST" path="/rest/api/3/issue" config-ref="Jira_Request_Config" doc:name="Jira create issue">
+            <http:body><![CDATA[#[payload]]]></http:body>
+            <http:headers><![CDATA[#[output application/java --- { "Content-Type": "application/json", "Authorization": "Basic " ++ (dw::core::Binaries::toBase64((p('jira.username') ++ ':' ++ p('jira.apiToken')) as Binary {encoding: "UTF-8"})) }]]]></http:headers>
+        </http:request>
+        <ee:transform doc:name="Jira response to result">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    severity: vars.incidentSeverity default "P1-Critical",
+    jira: { key: payload.key, id: payload.id }
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </sub-flow>
+
+    <flow name="create-incident-entry" doc:name="create-incident-entry">
+        <validation:is-not-blank-string value="#[payload.summary]" message="summary is required" config-ref="Validation_Config" doc:name="Validate summary" />
+        <validation:is-not-blank-string value="#[payload.severity]" message="severity is required" config-ref="Validation_Config" doc:name="Validate severity" />
+        <flow-ref name="intelligent-incident-router" doc:name="intelligent-incident-router" />
+        <error-handler>
+            <on-error-continue type="VALIDATION:BLANK_STRING" doc:name="Validation error">
+                <ee:transform doc:name="Validation error payload">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{"error": "Bad request", "message": (error.description default "Validation failed")}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <set-variable value="400" variableName="httpStatus" doc:name="Set 400" />
+            </on-error-continue>
+            <on-error-continue type="ANY" doc:name="Any other error">
+                <ee:transform doc:name="Error payload">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{"error": "Internal error", "message": (error.description default "Unexpected error")}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <set-variable value="500" variableName="httpStatus" doc:name="Set 500" />
+            </on-error-continue>
+        </error-handler>
+    </flow>
+
+    <sub-flow name="create-pagerduty-event-flow" doc:name="create-pagerduty-event-flow">
+        <set-variable value="#[payload.severity default 'P1-Critical']" variableName="incidentSeverity" doc:name="Preserve severity" />
+        <ee:transform doc:name="Build PagerDuty event body">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    routing_key: p('pagerduty.routingKey'),
+    event_action: "trigger",
+    payload: {
+        summary: payload.summary default "Incident",
+        severity: "critical",
+        source: "elk-mcp-process-api"
+    },
+    dedup_key: payload.anomaly_id default uuid()
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <http:request method="POST" path="/v2/enqueue" config-ref="PagerDuty_Request_Config" doc:name="PagerDuty create event">
+            <http:body><![CDATA[#[payload]]]></http:body>
+            <http:headers><![CDATA[#[output application/java --- { "Content-Type": "application/json" }]]]></http:headers>
+        </http:request>
+        <ee:transform doc:name="PagerDuty response to result">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    severity: vars.incidentSeverity default "P1-Critical",
+    pagerduty: { dedup_key: payload.dedup_key default "N/A" }
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </sub-flow>
+</mule>

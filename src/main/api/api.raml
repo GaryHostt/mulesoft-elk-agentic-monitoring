@@ -1,0 +1,150 @@
+#%RAML 1.0
+title: ELK-Agent-System-API
+description: Unified API for standard log retrieval and MCP-hosted AI Agent tools.
+version: v1.0.0
+protocols: [HTTPS, HTTP]
+mediaType: application/json
+
+traits:
+  client-id-required:
+    headers:
+      client_id:
+        type: string
+        required: true
+      client_secret:
+        type: string
+        required: true
+    responses:
+      401:
+        description: Unauthorized - Invalid Client ID or Secret.
+
+/logs:
+  displayName: Log Management
+  is: [client-id-required]
+  get:
+    description: Standard REST endpoint for manual log retrieval. Returns token-optimized, PII-redacted log summary.
+    queryParameters:
+      service_id:
+        type: string
+        required: true
+        description: Service identifier to filter logs.
+      time_lookback:
+        type: string
+        description: ISO8601 duration for lookback window (e.g. PT5M for 5 minutes, PT15M default).
+        example: "PT15M"
+      use_sliding_window:
+        type: boolean
+        description: When true, use sliding-window token optimizer (overrides config). Useful for high-volume log reduction.
+      startTime:
+        type: string
+        description: Reserved for future use; explicit range start.
+      endTime:
+        type: string
+        description: Reserved for future use; explicit range end.
+    responses:
+      200:
+        body:
+          application/json:
+            example: |
+              {"service": "my-service", "total_hits": 10, "log_summary": [], "time_window": "Lookback window applied"}
+
+/mcp:
+  displayName: MCP Tool Suite
+  description: Endpoints specifically designed for the AI Agent Broker via the MCP Listener.
+
+  /tools:
+    /get_service_logs:
+      post:
+        description: |
+          MCP Tool: Fetches up to 100 token-optimized raw logs.
+          The mcp:tool-listener uses a Flow Reference to call the logic for this endpoint.
+        is: [client-id-required]
+        body:
+          application/json:
+            properties:
+              service_id:
+                type: string
+                example: "inventory-papi-v1"
+              time_lookback:
+                type: string
+                description: "ISO8601 duration format (e.g., PT5M for 5 minutes)"
+                example: "PT5M"
+              use_sliding_window:
+                type: boolean
+                description: When true, use sliding-window token optimizer (overrides config).
+        responses:
+          200:
+            body:
+              application/json:
+                example: |
+                  {
+                    "service": "inventory-papi-v1",
+                    "total_hits": 45,
+                    "log_summary": [
+                      {
+                        "occurrence_count": 40,
+                        "severity": "ERROR",
+                        "sample_message": "Database Connection Timeout"
+                      }
+                    ]
+                  }
+
+    /check_anomaly_status:
+      post:
+        description: Queries Elasticsearch ML jobs for current health scores.
+        is: [client-id-required]
+        body:
+          application/json:
+            properties:
+              job_id:
+                type: string
+        responses:
+          200:
+            body:
+              application/json:
+                example: |
+                  { "anomaly_score": 88, "status": "critical" }
+
+    /create_incident:
+      post:
+        description: |
+          Action Process API: Create incident. Routes to HITL (Slack) when confidence_score < 0.85, else creates Jira/PagerDuty tickets.
+        is: [client-id-required]
+        body:
+          application/json:
+            properties:
+              severity:
+                type: string
+                description: e.g. P1-Critical, P2-High
+                example: "P1-Critical"
+              summary:
+                type: string
+                description: Incident summary
+              anomaly_id:
+                type: string
+                description: Optional anomaly identifier for idempotency
+              reasoning:
+                type: string
+                description: Optional reasoning text
+              confidence_score:
+                type: number
+                description: If present and < 0.85, incident is queued for human review
+        responses:
+          200:
+            body:
+              application/json:
+                example: |
+                  { "status": "created", "jira": { "key": "INC-123" }, "pagerduty": { "dedup_key": "..." } }
+          400:
+            description: Bad request - summary or severity missing
+
+/health:
+  displayName: Health
+  get:
+    description: Liveness check for the API.
+    responses:
+      200:
+        body:
+          application/json:
+            example: |
+              {"status": "OK"}
