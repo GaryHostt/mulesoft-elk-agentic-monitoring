@@ -55,6 +55,24 @@ mvn clean package
 
 - **API console:** With the app running, open **http://localhost:8081/console** (or `http://<host>:<port>/console` if you change `http.port` or host) to browse and try the API. The console is enabled by default with APIKit.
 
+## Claude Desktop (MCP)
+
+The app exposes an MCP server at **http://localhost:8081/mcp** (Streamable HTTP). Claude Desktop can connect via a bridge (stdio to HTTP). The project includes a ready-to-use config: [config/claude_desktop_elk_mcp.json](config/claude_desktop_elk_mcp.json). It defines one server, `elk-mcp`, using `npx mcp-bridge` and that URL.
+
+**How to use:** Copy the `mcpServers` block (or the whole file) into Claude Desktop’s config at `~/Library/Application Support/Claude/claude_desktop_config.json`, then restart Claude Desktop. Ensure the Mule app is running on port 8081. Requires Node/npx for `mcp-bridge`.
+
+**Prompt to send:**
+
+> Call the get_service_logs tool with service_id my-service and time_lookback PT15M. What do you get?
+
+**Expected behavior:** If Elasticsearch is up and the index has data for that service, the tool returns JSON with `service`, `total_hits`, `log_summary`, `time_window`; Claude should summarize it. If ES is down or the app returns an error, the tool returns an error payload (e.g. `{"error": "Elasticsearch unavailable", ...}`); Claude should report the error.
+
+**Optional second prompt:**
+
+> Call the check_anomaly_status tool with job_id my-ml-job. What’s the result?
+
+Expected: anomaly JSON if ML is enabled and the job exists, else an error from the app. Full text and usage steps are also in [config/claude_elk_mcp_test_prompt.txt](config/claude_elk_mcp_test_prompt.txt).
+
 ## Validating connection to local ELK
 
 The app is configured for a local Elasticsearch at `localhost:9200` and index `my-index` (see `src/main/resources/config.yaml`). To validate connectivity and operations:

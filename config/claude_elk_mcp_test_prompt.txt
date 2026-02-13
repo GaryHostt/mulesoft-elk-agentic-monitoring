@@ -1,0 +1,29 @@
+PROMPT TO SEND TO CLAUDE
+------------------------
+Call the get_service_logs tool with service_id my-service and time_lookback PT15M. What do you get?
+
+
+EXPECTED BEHAVIOR
+-----------------
+- Claude invokes the MCP tool get_service_logs with arguments: { "service_id": "my-service", "time_lookback": "PT15M" }.
+
+- If Elasticsearch is up and the index has data for service_name "my-service":
+  The tool returns a JSON body with service, total_hits, log_summary, time_window. Claude should summarize that (e.g. "The tool returned … total_hits … log_summary …").
+
+- If Elasticsearch is down or the app returns an error:
+  The tool response will contain an error payload (e.g. {"error": "Elasticsearch unavailable", ...}). Claude should report that the tool returned an error and quote or summarize the message.
+
+
+OPTIONAL SECOND PROMPT
+----------------------
+Call the check_anomaly_status tool with job_id my-ml-job. What's the result?
+
+Expected: either anomaly JSON (if ML is enabled and the job exists) or an error from the app.
+
+
+USAGE
+-----
+1. Copy the mcpServers block from config/claude_desktop_elk_mcp.json into ~/Library/Application Support/Claude/claude_desktop_config.json (or replace that file).
+2. Restart Claude Desktop.
+3. Ensure the Mule app is running locally (http://localhost:8081).
+4. Use the prompt above in a new conversation.

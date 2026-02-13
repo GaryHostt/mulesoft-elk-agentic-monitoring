@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "elk-mcp": {
+      "command": "npx",
+      "args": ["-y", "mcp-bridge", "http://localhost:8081/mcp"]
+    }
+  }
+}
