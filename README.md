@@ -93,6 +93,8 @@ The app is configured for a local Elasticsearch at `localhost:9200` and index `m
 
 ## API usage
 
+A Postman collection is in [postman/ELK-Agent-System-API.postman_collection.json](postman/ELK-Agent-System-API.postman_collection.json); import it and set `baseUrl` (and optionally `client_id`/`client_secret`) to call the endpoints.
+
 - **GET /logs?service_id=my-service&time_lookback=PT5M** – token-optimized, PII-redacted log summary; optional `use_sliding_window=true`
 - **GET /health** – liveness
 - **POST /mcp/tools/get_service_logs** – body: `{"service_id":"...","time_lookback":"PT5M","use_sliding_window":false}`

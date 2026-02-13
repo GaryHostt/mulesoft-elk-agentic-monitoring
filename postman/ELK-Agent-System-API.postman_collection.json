@@ -1,0 +1,95 @@
+{
+  "info": {
+    "name": "ELK-Agent-System-API",
+    "description": "Mule app REST API: health, logs, MCP tools (get_service_logs, check_anomaly_status, create_incident).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8081" },
+    { "key": "client_id", "value": "" },
+    { "key": "client_secret", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "GET Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/health",
+        "description": "Liveness check for the API."
+      }
+    },
+    {
+      "name": "GET Logs",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "client_id", "value": "{{client_id}}" },
+          { "key": "client_secret", "value": "{{client_secret}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/logs?service_id=my-service&time_lookback=PT15M&use_sliding_window=false",
+          "host": ["{{baseUrl}}"],
+          "path": ["logs"],
+          "query": [
+            { "key": "service_id", "value": "my-service", "description": "Required. Service identifier." },
+            { "key": "time_lookback", "value": "PT15M", "description": "ISO8601 duration (e.g. PT5M, PT15M)." },
+            { "key": "use_sliding_window", "value": "false", "description": "Optional. Use sliding-window token optimizer." }
+          ]
+        },
+        "description": "Token-optimized, PII-redacted log summary for a service."
+      }
+    },
+    {
+      "name": "POST get_service_logs",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "client_id", "value": "{{client_id}}" },
+          { "key": "client_secret", "value": "{{client_secret}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"service_id\": \"my-service\",\n  \"time_lookback\": \"PT15M\",\n  \"use_sliding_window\": false\n}"
+        },
+        "url": "{{baseUrl}}/mcp/tools/get_service_logs",
+        "description": "MCP Tool: Fetches up to 100 token-optimized raw logs."
+      }
+    },
+    {
+      "name": "POST check_anomaly_status",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "client_id", "value": "{{client_id}}" },
+          { "key": "client_secret", "value": "{{client_secret}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"job_id\": \"my-ml-job\"\n}"
+        },
+        "url": "{{baseUrl}}/mcp/tools/check_anomaly_status",
+        "description": "Queries Elasticsearch ML jobs for current anomaly scores and health."
+      }
+    },
+    {
+      "name": "POST create_incident",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "client_id", "value": "{{client_id}}" },
+          { "key": "client_secret", "value": "{{client_secret}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"severity\": \"P1-Critical\",\n  \"summary\": \"Test incident\",\n  \"anomaly_id\": \"test-1\",\n  \"reasoning\": \"Test\",\n  \"confidence_score\": 0.9\n}"
+        },
+        "url": "{{baseUrl}}/mcp/tools/create_incident",
+        "description": "Action Process API: Create incident. confidence_score < 0.85 routes to HITL (Slack); else Jira/PagerDuty."
+      }
+    }
+  ]
+}
