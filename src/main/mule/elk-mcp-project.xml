@@ -72,7 +72,6 @@ output application/json
         <flow-ref name="create-incident-entry" doc:name="create-incident-entry" />
     </flow>
 
-    <!-- MCP flows temporarily commented out until MCP server config is properly configured
     <flow name="get_service_logs" doc:name="get_service_logs">
         <mcp:tool-listener config-ref="MCP_Server_Config" name="get_service_logs" doc:name="MCP Tool get_service_logs">
             <mcp:description>Fetches up to 100 token-optimized raw logs for a service. Use ISO8601 duration for time_lookback (e.g. PT5M for 5 minutes).</mcp:description>
@@ -115,7 +114,6 @@ output application/json
         </mcp:tool-listener>
         <flow-ref name="anomaly-status-flow" doc:name="anomaly-status-flow" />
     </flow>
-    -->
 
     <flow name="elk-search-logic-flow" doc:name="elk-search-logic-flow">
         <validation:is-not-blank-string value="#[payload.service_id]" message="service_id is required" config-ref="Validation_Config" doc:name="Validate service_id" />

@@ -20,6 +20,20 @@ Edit `src/main/resources/config.yaml` (or override via `config.yaml` in the app 
 - `mcp.endpointPath` – MCP endpoint path (default `/mcp`)
 - **Phase 2**: `jira.host`, `jira.username`, `jira.apiToken`; `pagerduty.routingKey`; `slack.webhookPath`
 
+## Action Process API
+
+The Action Process API (Layer 2) is implemented in [src/main/mule/action-process-api.xml](src/main/mule/action-process-api.xml) and imported from the main app ([elk-mcp-project.xml](src/main/mule/elk-mcp-project.xml)).
+
+- **Entry point:** REST `POST /mcp/tools/create_incident` (defined in [api.raml](src/main/api/api.raml)). The flow `create-incident-entry` validates `summary` and `severity`, then calls `intelligent-incident-router`.
+- **Flows:**
+  - **create-incident-entry:** Validates input, flow-refs the router, and handles validation and generic errors.
+  - **intelligent-incident-router:** If `confidence_score` is present and &lt; 0.85, the incident is stored in Object Store (pending HITL), Slack is notified (HITL), and the response is `pending_review`; otherwise it flow-refs **create-incident-flow**.
+  - **create-incident-flow:** Idempotency is enforced by key (`anomaly_id` or hash of `summary`) using **Incident_Idempotency_Object_Store**. If already processed, the stored result is returned. Otherwise: P1-Critical incidents trigger a Scatter-Gather to **create-jira-issue-flow** and **create-pagerduty-event-flow**; other severities use Jira only. Results are combined and stored for idempotency. The flow is wrapped in try/error-handler (HTTP or connector failures produce an error payload and optionally store for retry in **Pending_Incidents_Object_Store**).
+  - **create-jira-issue-flow:** Builds the Jira issue body, POSTs to the Jira REST API (Basic auth from config), and returns `{ severity, jira: { key, id } }`.
+  - **create-pagerduty-event-flow:** Builds the PagerDuty Events v2 body, POSTs to PagerDuty, and returns `{ severity, pagerduty: { dedup_key } }`.
+- **Object Stores:** **Pending_Incidents_Object_Store** (HITL and retry, 7 days TTL), **Incident_Idempotency_Object_Store** (24h TTL).
+- **Configuration:** `jira.host`, `jira.username`, `jira.apiToken`; `pagerduty.routingKey`; `slack.webhookPath`. HTTP configs for Jira, PagerDuty, and Slack are in [global.xml](src/main/mule/global.xml).
+
 ## Dependencies
 
 The project uses:
@@ -38,6 +52,8 @@ These are resolved from Anypoint Exchange and Mulesoft repositories. If `mvn com
 mvn clean package
 # Run locally (e.g. with Mule runtime or Anypoint Studio)
 ```
+
+- **API console:** With the app running, open **http://localhost:8081/console** (or `http://<host>:<port>/console` if you change `http.port` or host) to browse and try the API. The console is enabled by default with APIKit.
 
 ## Validating connection to local ELK
 

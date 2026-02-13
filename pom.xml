@@ -50,25 +50,6 @@
             <version>${mule.validation.version}</version>
             <classifier>mule-plugin</classifier>
         </dependency>
-        <!-- Phase 2 Action Process API -->
-        <dependency>
-            <groupId>org.mule.connectors</groupId>
-            <artifactId>mule-objectstore-connector</artifactId>
-            <version>${mule.objectstore.version}</version>
-            <classifier>mule-plugin</classifier>
-        </dependency>
-        <dependency>
-            <groupId>com.mulesoft.connectors</groupId>
-            <artifactId>mule4-jira-connector</artifactId>
-            <version>${mule.jira.version}</version>
-            <classifier>mule-plugin</classifier>
-        </dependency>
-        <dependency>
-            <groupId>org.mule.modules</groupId>
-            <artifactId>mule-validation-module</artifactId>
-            <version>${mule.validation.version}</version>
-            <classifier>mule-plugin</classifier>
-        </dependency>
         <dependency>
             <groupId>org.mule.connectors</groupId>
             <artifactId>mule-objectstore-connector</artifactId>

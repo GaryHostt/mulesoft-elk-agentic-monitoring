@@ -198,7 +198,10 @@ output application/json
         </ee:transform>
         <http:request method="POST" path="/rest/api/3/issue" config-ref="Jira_Request_Config" doc:name="Jira create issue">
             <http:body><![CDATA[#[payload]]]></http:body>
-            <http:headers><![CDATA[#[output application/java --- { "Content-Type": "application/json", "Authorization": "Basic " ++ (dw::core::Binaries::toBase64((p('jira.username') ++ ':' ++ p('jira.apiToken')) as Binary {encoding: "UTF-8"})) }]]]></http:headers>
+            <http:headers><![CDATA[#[output application/java --- { 
+                "Content-Type": "application/json", 
+                "Authorization": "Basic " ++ ((p('jira.username') ++ ':' ++ p('jira.apiToken')) as String as Binary {encoding: "UTF-8"} as String {encoding: "base64"})
+            }]]]></http:headers>
         </http:request>
         <ee:transform doc:name="Jira response to result">
             <ee:message>

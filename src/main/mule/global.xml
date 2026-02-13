@@ -9,7 +9,7 @@
         http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
         http://www.mulesoft.org/schema/mule/mcp http://www.mulesoft.org/schema/mule/mcp/current/mule-mcp.xsd">
 
-    <configuration-properties file="classpath:config.yaml" />
+    <configuration-properties file="classpath:config.properties" />
 
     <http:listener-config name="HTTP_Listener_Config" doc:name="HTTP Listener config">
         <http:listener-connection host="${http.host}" port="${http.port}" />
@@ -29,4 +29,5 @@
     <http:request-config name="Slack_Webhook_Request_Config" doc:name="Slack Webhook HTTP Request config">
         <http:request-connection host="hooks.slack.com" port="443" protocol="HTTPS" />
     </http:request-config>
+
 </mule>
