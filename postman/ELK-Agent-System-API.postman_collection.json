@@ -27,16 +27,7 @@
           { "key": "client_id", "value": "{{client_id}}" },
           { "key": "client_secret", "value": "{{client_secret}}" }
         ],
-        "url": {
-          "raw": "{{baseUrl}}/logs?service_id=my-service&time_lookback=PT15M&use_sliding_window=false",
-          "host": ["{{baseUrl}}"],
-          "path": ["logs"],
-          "query": [
-            { "key": "service_id", "value": "my-service", "description": "Required. Service identifier." },
-            { "key": "time_lookback", "value": "PT15M", "description": "ISO8601 duration (e.g. PT5M, PT15M)." },
-            { "key": "use_sliding_window", "value": "false", "description": "Optional. Use sliding-window token optimizer." }
-          ]
-        },
+        "url": "{{baseUrl}}/logs?service_id=my-service&time_lookback=PT15M&use_sliding_window=false",
         "description": "Token-optimized, PII-redacted log summary for a service."
       }
     },

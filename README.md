@@ -48,9 +48,19 @@ These are resolved from Anypoint Exchange and Mulesoft repositories. If `mvn com
 
 ## Build and run
 
+**Build:**
 ```bash
 mvn clean package
-# Run locally (e.g. with Mule runtime or Anypoint Studio)
+```
+
+**Run locally:** This project does not support `mvn mule:run`. Start the app from your IDE so it listens on port 8081:
+
+1. **Cursor / VS Code (with Mule extension):** Open the **Run and Debug** panel (Ctrl+Shift+D / Cmd+Shift+D), choose **"Run Mule Application"**, and press Run (F5 or play). Wait until the console shows the app is deployed.
+2. **Anypoint Code Builder:** Use the built-in Run/Debug to start the application.
+
+**Verify:** Once the app is running, you should see a response from:
+```bash
+curl http://localhost:8081/health
 ```
 
 - **API console:** With the app running, open **http://localhost:8081/console** (or `http://<host>:<port>/console` if you change `http.port` or host) to browse and try the API. The console is enabled by default with APIKit.
@@ -93,7 +103,11 @@ The app is configured for a local Elasticsearch at `localhost:9200` and index `m
 
 ## API usage
 
-A Postman collection is in [postman/ELK-Agent-System-API.postman_collection.json](postman/ELK-Agent-System-API.postman_collection.json); import it and set `baseUrl` (and optionally `client_id`/`client_secret`) to call the endpoints.
+A Postman collection is in [postman/ELK-Agent-System-API.postman_collection.json](postman/ELK-Agent-System-API.postman_collection.json).
+
+- **Base URL:** `http://localhost:8081` (no trailing slash). The collection variable **`baseUrl`** is set to this by default.
+- **If you get "connect ECONNREFUSED":** (1) Start the Mule app and wait until it’s up, then run `curl http://localhost:8081/health` — you should get a response. (2) In Postman, open the collection → Variables and confirm `baseUrl` = `http://localhost:8081`. (3) If you use an Environment, add a variable named exactly `baseUrl` with the same value. (4) Try `http://127.0.0.1:8081` if `localhost` fails (e.g. IPv6).
+- Optionally set `client_id` and `client_secret` in the collection (or environment) for requests that use them.
 
 - **GET /logs?service_id=my-service&time_lookback=PT5M** – token-optimized, PII-redacted log summary; optional `use_sliding_window=true`
 - **GET /health** – liveness

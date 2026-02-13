@@ -15,6 +15,10 @@
         <http:listener-connection host="${http.host}" port="${http.port}" />
     </http:listener-config>
 
+    <mcp:config name="MCP_Server_Config" serverName="elk-mcp" serverVersion="1.0.0" doc:name="MCP Server config">
+        <mcp:streamable-http-server-connection listenerConfig="HTTP_Listener_Config" mcpEndpointPath="${mcp.endpointPath}" />
+    </mcp:config>
+
     <http:request-config name="Elasticsearch_Request_Config" doc:name="Elasticsearch HTTP Request config">
         <http:request-connection host="${elasticsearch.host}" port="${elasticsearch.port}" protocol="${elasticsearch.protocol}" />
     </http:request-config>

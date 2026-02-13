@@ -76,7 +76,7 @@ output application/json
         <mcp:tool-listener config-ref="MCP_Server_Config" name="get_service_logs" doc:name="MCP Tool get_service_logs">
             <mcp:description>Fetches up to 100 token-optimized raw logs for a service. Use ISO8601 duration for time_lookback (e.g. PT5M for 5 minutes).</mcp:description>
             <mcp:parameters-schema><![CDATA[{
-                "$schema": "# SECURITY: Remote schema removed (http://json-schema.org/draft-07/schema#)",
+                "$schema": "http://json-schema.org/draft-07/schema#",
                 "type": "object",
                 "properties": {
                     "service_id": { "type": "string", "description": "Service identifier" },
@@ -98,7 +98,7 @@ output application/json
         <mcp:tool-listener config-ref="MCP_Server_Config" name="check_anomaly_status" doc:name="MCP Tool check_anomaly_status">
             <mcp:description>Queries Elasticsearch ML jobs for current anomaly scores and health.</mcp:description>
             <mcp:parameters-schema><![CDATA[{
-                "$schema": "# SECURITY: Remote schema removed (http://json-schema.org/draft-07/schema#)",
+                "$schema": "http://json-schema.org/draft-07/schema#",
                 "type": "object",
                 "properties": {
                     "job_id": { "type": "string", "description": "Elasticsearch ML job ID" }
